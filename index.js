@@ -1,10 +1,15 @@
 // See https://github.com/dialogflow/dialogflow-fulfillment-nodejs
 // for Dialogflow fulfillment library docs, samples, and to report issues
 'use strict';
- 
+
 const functions = require('firebase-functions');
-const {WebhookClient} = require('dialogflow-fulfillment');
-const {Card, Suggestion} = require('dialogflow-fulfillment');
+const {
+  dialogflow,
+  Suggestions,
+  BasicCard,
+  Button,
+  SimpleResponse
+} = require('actions-on-google');
  
 //process.env.DEBUG = 'dialogflow:debug'; // enables lib debugging statements
 
@@ -133,39 +138,44 @@ var events = {
 var today = '';
 var items = [];
 
-exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, response) => {
-  const agent = new WebhookClient({ request, response });
-  //console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
-  //console.log('Dialogflow Request body: ' + JSON.stringify(request.body));
-  
-  function fallback(agent) {
-    agent.add(`\n請試著問問看: 歷史上的今天`);
-    agent.add(new Suggestion(`歷史上的今天`));
-  }
+// Create an app instance
+const app = dialogflow({
+  debug: false,
+  //init: () => {}
+});
 
+const fallback = agent => {
+    agent.add(`\n 請試著問問看: 歷史上的今天`);
+    agent.add(new Suggestions(`歷史上的今天`));
+};
 
-  function googleAssistantHandler(agent) {
-    //let conv = agent.conv(); // Get Actions on Google library conv instance
-    let [, month, date] = agent.parameters.date.split('T')[0].split('-');
+app.intent('Default Welcome Intent', fallback);
+app.intent('Default Fallback Intent', fallback);
+
+app.intent('TodayInHistoryIntent', (agent, { date: rawdate }) => {
+  let [, month, date] = rawdate.split('T')[0].split('-');
     let timedex = `${month}${date}`;
-    console.log('Current timedex ', timedex);
+    //console.log('Current timedex ', timedex);
     if (today !== timedex) {
       today = timedex;
       items = events[today];
     }
     if (items) {
-      agent.add(`歷史上的${parseInt(month, 10)}月${parseInt(date, 10)}日，${items[Math.floor(Math.random()*items.length)]}`); // Use Actions on Google library
-      //conv.close('bye');
-      //agent.add(conv); // Add Actions on Google library responses to your agent's response
+      const msg = `歷史上的${parseInt(month, 10)}月${parseInt(date, 10)}日，${items[Math.floor(Math.random()*items.length)]}`;
+      agent.close(msg);
+      /*agent.ask(new BasicCard({
+        title: `歷史上的${parseInt(month, 10)}月${parseInt(date, 10)}日`,
+        formattedText: `${items[Math.floor(Math.random()*items.length)]}`,
+        buttons: new Button({
+          title: '查看更多',
+          url: `https://zh.wikipedia.org/wiki/${parseInt(month, 10)}%E6%9C%88${parseInt(date, 10)}%E6%97%A5`,
+    	}),
+      }));*/
     } else {
-      agent.add(`抱歉，目前尚未提供${parseInt(month, 10)}月${parseInt(date, 10)}日的歷史資料`);
-      agent.add(new Suggestion(`歷史上的今天`));
+      const msgFail = `抱歉，目前尚未提供${parseInt(month, 10)}月${parseInt(date, 10)}日的歷史資料`;
+      agent.ask(msgFail);
+      agent.ask(new Suggestions(`歷史上的今天`));
     }
-  }
-
-  // Run the proper function handler based on the matched Dialogflow intent name
-  let intentMap = new Map();
-  intentMap.set('Default Fallback Intent', fallback);
-  intentMap.set('TodayInHistoryIntent', googleAssistantHandler);
-  agent.handleRequest(intentMap);
 });
+
+exports.dialogflowFirebaseFulfillment = functions.https.onRequest(app);
